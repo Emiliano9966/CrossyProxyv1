@@ -1,0 +1,6 @@
+name = "crossyproxy"
+compatibility_date = "2025-10-18"
+main = "./functions/index.js"
+
+[site]
+bucket = "./public"
