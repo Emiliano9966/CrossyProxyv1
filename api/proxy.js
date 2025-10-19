@@ -1,26 +1,39 @@
-export default async function handler(req, res) {
-  const urlParam = req.query.url || req.body?.url
-  if (!urlParam) {
-    res.status(400).send('Missing ?url= parameter')
-    return
-  }
+import fetch from "node-fetch";
+import { parse } from "node-html-parser";
 
-  let target = urlParam
-  if (!/^https?:\/\//i.test(target)) {
-    target = 'https://' + target
-  }
+export default async function handler(req, res) {
+  let target = req.query.url || req.body?.url;
+  if (!target) return res.status(400).send("Missing ?url= parameter");
+
+  if (!/^https?:\/\//i.test(target)) target = "https://" + target;
 
   try {
-    const response = await fetch(target)
-    const body = await response.text()
+    const response = await fetch(target);
+    const contentType = response.headers.get("content-type");
 
-    // Copy headers except some restricted ones
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', '*')
+    let body = await response.text();
 
-    res.status(response.status).send(body)
+    // If HTML, rewrite URLs to go through proxy
+    if (contentType && contentType.includes("text/html")) {
+      const root = parse(body);
+
+      // Rewrite <script src>, <link href>, <img src>
+      root.querySelectorAll("script[src], link[href], img[src]").forEach(el => {
+        const attr = el.tagName === "LINK" ? "href" : "src";
+        const url = el.getAttribute(attr);
+        if (url && !url.startsWith("http")) return; // skip relative
+        el.setAttribute(attr, `/api/proxy?url=${encodeURIComponent(url)}`);
+      });
+
+      body = root.toString();
+    }
+
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "*");
+
+    res.status(response.status).send(body);
   } catch (err) {
-    res.status(500).send('Error fetching URL: ' + err.message)
+    res.status(500).send("Error fetching URL: " + err.message);
   }
 }
